@@ -1,17 +1,27 @@
 // src/components/Owner/AddReadingModal.jsx
 import React, { useState } from 'react';
-import { FaTimes } from 'react-icons/fa';
+import { FaTimes, FaCalendarAlt } from 'react-icons/fa';
 
 const AddReadingModal = ({ onClose, onSubmit, flat }) => {
-  const currentMonth = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-  
   const [formData, setFormData] = useState({
     currentReading: '',
-    billMonth: currentMonth
+    billMonth: getCurrentMonth()
   });
+  const [showCalendar, setShowCalendar] = useState(false);
+
+  function getCurrentMonth() {
+    const now = new Date();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${months[now.getMonth()]} ${now.getFullYear()}`;
+  }
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleMonthSelect = (month, year) => {
+    setFormData({ ...formData, billMonth: `${month} ${year}` });
+    setShowCalendar(false);
   };
 
   const handleSubmit = (e) => {
@@ -67,15 +77,34 @@ const AddReadingModal = ({ onClose, onSubmit, flat }) => {
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Bill Month
             </label>
-            <input
-              type="text"
-              name="billMonth"
-              value={formData.billMonth}
-              onChange={handleChange}
-              placeholder="Jan-2024"
-              required
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                name="billMonth"
+                value={formData.billMonth}
+                onChange={handleChange}
+                placeholder="Select month"
+                required
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none pr-10"
+                readOnly
+                onClick={() => setShowCalendar(!showCalendar)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowCalendar(!showCalendar)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600"
+              >
+                <FaCalendarAlt />
+              </button>
+            </div>
+
+            {/* Month Picker Calendar */}
+            {showCalendar && (
+              <MonthPicker
+                onSelect={handleMonthSelect}
+                onClose={() => setShowCalendar(false)}
+              />
+            )}
           </div>
 
           <div className="flex gap-3 pt-4">
@@ -94,6 +123,52 @@ const AddReadingModal = ({ onClose, onSubmit, flat }) => {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+};
+
+// Month Picker Component
+const MonthPicker = ({ onSelect, onClose }) => {
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState(currentYear);
+  
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const years = Array.from({ length: 3 }, (_, i) => currentYear - 1 + i);
+
+  return (
+    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 p-4 z-10">
+      {/* Year Selector */}
+      <div className="flex justify-between items-center mb-4">
+        <button
+          type="button"
+          onClick={() => setSelectedYear(selectedYear - 1)}
+          className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded"
+        >
+          ‹
+        </button>
+        <span className="font-semibold text-gray-900">{selectedYear}</span>
+        <button
+          type="button"
+          onClick={() => setSelectedYear(selectedYear + 1)}
+          className="px-3 py-1 text-gray-600 hover:bg-gray-100 rounded"
+        >
+          ›
+        </button>
+      </div>
+
+      {/* Month Grid */}
+      <div className="grid grid-cols-3 gap-2">
+        {months.map((month) => (
+          <button
+            key={month}
+            type="button"
+            onClick={() => onSelect(month, selectedYear)}
+            className="px-3 py-2 text-sm rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors"
+          >
+            {month}
+          </button>
+        ))}
       </div>
     </div>
   );

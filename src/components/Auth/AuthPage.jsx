@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { FaBuilding, FaUsers, FaEye, FaEyeSlash } from 'react-icons/fa';
 import { FaDroplet } from 'react-icons/fa6';
+import { FcGoogle } from 'react-icons/fc';
 import toast from 'react-hot-toast';
 
 const AuthPage = () => {
@@ -12,7 +13,7 @@ const AuthPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { signup, login } = useAuth();
+  const { signup, login, googleSignIn } = useAuth();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -24,6 +25,41 @@ const AuthPage = () => {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    try {
+      const result = await googleSignIn();
+      
+      // Check if user exists in Firestore
+      // If not, create with selected role
+      const userData = {
+        name: result.user.displayName,
+        email: result.user.email,
+        phone: result.user.phoneNumber || '',
+        role: userType,
+        flatCode: userType === 'tenant' ? formData.flatCode : null
+      };
+
+      toast.success('Google sign-in successful!');
+      navigate(userType === 'owner' ? '/owner' : '/tenant');
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+      
+      let errorMessage = 'Google sign-in failed';
+      if (error.code === 'auth/popup-closed-by-user') {
+        errorMessage = 'Sign-in cancelled';
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        errorMessage = 'Another sign-in in progress';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -57,7 +93,6 @@ const AuthPage = () => {
     } catch (error) {
       console.error('Auth error:', error);
       
-      // Better error messages
       let errorMessage = 'Authentication failed';
       
       if (error.code === 'auth/email-already-in-use') {
@@ -116,30 +151,51 @@ const AuthPage = () => {
             </button>
           </div>
 
-          {/* User Type Selection */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
-            <button
-              onClick={() => setUserType('owner')}
-              className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
-                userType === 'owner'
-                  ? 'border-blue-600 bg-blue-50 text-blue-600'
-                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
-              }`}
-            >
-              <FaBuilding />
-              <span className="font-medium">Owner</span>
-            </button>
-            <button
-              onClick={() => setUserType('tenant')}
-              className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
-                userType === 'tenant'
-                  ? 'border-blue-600 bg-blue-50 text-blue-600'
-                  : 'border-gray-200 text-gray-600 hover:border-gray-300'
-              }`}
-            >
-              <FaUsers />
-              <span className="font-medium">Tenant</span>
-            </button>
+          {/* User Type Selection - Only show in Signup */}
+          {!isLogin && (
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              <button
+                onClick={() => setUserType('owner')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
+                  userType === 'owner'
+                    ? 'border-blue-600 bg-blue-50 text-blue-600'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <FaBuilding />
+                <span className="font-medium">Owner</span>
+              </button>
+              <button
+                onClick={() => setUserType('tenant')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border-2 transition-all ${
+                  userType === 'tenant'
+                    ? 'border-blue-600 bg-blue-50 text-blue-600'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <FaUsers />
+                <span className="font-medium">Tenant</span>
+              </button>
+            </div>
+          )}
+
+          {/* Google Sign-In Button */}
+          <button
+            onClick={handleGoogleSignIn}
+            disabled={loading || (!isLogin && userType === 'tenant' && !formData.flatCode)}
+            className="w-full flex items-center justify-center gap-3 py-3 px-4 border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium text-gray-700 mb-4 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <FcGoogle className="text-2xl" />
+            <span>{isLogin ? 'Sign in with Google' : 'Sign up with Google'}</span>
+          </button>
+
+          <div className="relative mb-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-300"></div>
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-2 bg-white text-gray-500">Or continue with email</span>
+            </div>
           </div>
 
           {/* Form */}

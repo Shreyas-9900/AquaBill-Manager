@@ -3,10 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { FaArrowLeft, FaPlus, FaEdit, FaTrash, FaCopy, FaCheckCircle } from 'react-icons/fa';
+import { FaArrowLeft, FaPlus, FaEdit, FaTrash, FaCopy, FaCheckCircle, FaPaperPlane } from 'react-icons/fa';
 import toast from 'react-hot-toast';
 import AddFlatModal from './AddFlatModal';
 import AddReadingModal from './AddReadingModal';
+import PaymentRequestModal from './PaymentRequestModal';
 
 const PropertyDetails = () => {
   const { propertyId } = useParams();
@@ -16,7 +17,10 @@ const PropertyDetails = () => {
   const [loading, setLoading] = useState(true);
   const [showAddFlat, setShowAddFlat] = useState(false);
   const [showAddReading, setShowAddReading] = useState(false);
+  const [showPaymentRequest, setShowPaymentRequest] = useState(false);
   const [selectedFlat, setSelectedFlat] = useState(null);
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [selectedBillFlat, setSelectedBillFlat] = useState(null);
 
   useEffect(() => {
     fetchPropertyDetails();
@@ -156,6 +160,43 @@ const PropertyDetails = () => {
     }
   };
 
+  const handleEditBill = async (billId, flat) => {
+    const newAmount = prompt('Enter new bill amount (₹):', flat.latestReading.billAmount);
+    
+    if (newAmount && !isNaN(newAmount)) {
+      try {
+        await updateDoc(doc(db, 'waterReadings', billId), {
+          billAmount: parseFloat(newAmount),
+          updatedAt: new Date().toISOString()
+        });
+        toast.success('Bill updated successfully!');
+        fetchFlats();
+      } catch (error) {
+        console.error('Error updating bill:', error);
+        toast.error('Failed to update bill');
+      }
+    }
+  };
+
+  const handleDeleteBill = async (billId) => {
+    if (!window.confirm('Are you sure you want to delete this bill? This action cannot be undone.')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'waterReadings', billId));
+      toast.success('Bill deleted successfully!');
+      fetchFlats();
+    } catch (error) {
+      console.error('Error deleting bill:', error);
+      toast.error('Failed to delete bill');
+    }
+  };
+
+  const handleRequestPayment = (flat) => {
+    setSelectedBill(flat.latestReading);
+    setSelectedBillFlat(flat);
+    setShowPaymentRequest(true);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -253,6 +294,9 @@ const PropertyDetails = () => {
                               {flat.latestReading.currentReading} units
                             </p>
                             <p className="text-sm text-gray-500">{flat.latestReading.billMonth}</p>
+                            <p className="text-sm font-semibold text-blue-600">
+                              ₹{flat.latestReading.billAmount?.toFixed(2)}
+                            </p>
                           </div>
                         ) : (
                           <span className="text-gray-400">No readings</span>
@@ -276,19 +320,56 @@ const PropertyDetails = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
+                          {/* Add Reading Button */}
                           <button
                             onClick={() => {
                               setSelectedFlat(flat.id);
                               setShowAddReading(true);
                             }}
-                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
                           >
                             Add Reading
                           </button>
+
+                          {/* Payment Request Button - Only for pending bills with tenants */}
+                          {flat.latestReading?.status === 'pending' && flat.tenantId && (
+                            <button
+                              onClick={() => handleRequestPayment(flat)}
+                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                              title="Request Payment"
+                            >
+                              <FaPaperPlane />
+                            </button>
+                          )}
+
+                          {/* Edit Bill Button */}
+                          {flat.latestReading && (
+                            <button
+                              onClick={() => handleEditBill(flat.latestReading.id, flat)}
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Edit Bill"
+                            >
+                              <FaEdit />
+                            </button>
+                          )}
+
+                          {/* Delete Bill Button */}
+                          {flat.latestReading && (
+                            <button
+                              onClick={() => handleDeleteBill(flat.latestReading.id)}
+                              className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+                              title="Delete Bill"
+                            >
+                              <FaTrash />
+                            </button>
+                          )}
+
+                          {/* Delete Flat Button - Only for vacant flats */}
                           {!flat.tenantId && (
                             <button
                               onClick={() => handleDeleteFlat(flat.id)}
                               className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete Flat"
                             >
                               <FaTrash />
                             </button>
@@ -304,7 +385,7 @@ const PropertyDetails = () => {
         </div>
       </main>
 
-      {/* Modals */}
+      {/* Add Flat Modal */}
       {showAddFlat && (
         <AddFlatModal
           onClose={() => setShowAddFlat(false)}
@@ -312,6 +393,7 @@ const PropertyDetails = () => {
         />
       )}
 
+      {/* Add Reading Modal */}
       {showAddReading && (
         <AddReadingModal
           onClose={() => {
@@ -320,6 +402,21 @@ const PropertyDetails = () => {
           }}
           onSubmit={handleAddReading}
           flat={flats.find(f => f.id === selectedFlat)}
+        />
+      )}
+
+      {/* Payment Request Modal */}
+      {showPaymentRequest && selectedBill && selectedBillFlat && (
+        <PaymentRequestModal
+          bill={selectedBill}
+          tenant={selectedBillFlat.tenant}
+          property={property}
+          flat={selectedBillFlat}
+          onClose={() => {
+            setShowPaymentRequest(false);
+            setSelectedBill(null);
+            setSelectedBillFlat(null);
+          }}
         />
       )}
     </div>

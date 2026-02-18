@@ -4,7 +4,9 @@ import {
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
   signOut, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -77,6 +79,30 @@ export const AuthProvider = ({ children }) => {
     return signInWithEmailAndPassword(auth, email, password);
   };
 
+  // Google Sign-In
+  const googleSignIn = async () => {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    
+    // Check if user profile exists
+    const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+    
+    if (!userDoc.exists()) {
+      // Create new user profile (role will be set by the component)
+      await setDoc(doc(db, 'users', result.user.uid), {
+        name: result.user.displayName,
+        email: result.user.email,
+        phone: result.user.phoneNumber || '',
+        role: 'owner', // Default to owner, can be changed
+        flatId: null,
+        uid: result.user.uid,
+        createdAt: new Date().toISOString()
+      });
+    }
+    
+    return result;
+  };
+
   // Logout user
   const logout = () => {
     return signOut(auth);
@@ -109,6 +135,7 @@ export const AuthProvider = ({ children }) => {
     userProfile,
     signup,
     login,
+    googleSignIn,
     logout,
     fetchUserProfile
   };
