@@ -1,66 +1,75 @@
 // src/components/Tenant/TenantDashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
+import { useAuth } from '../../context/AuthContext';
 import { FaHome, FaSignOutAlt, FaCalendar, FaMoneyBillWave } from 'react-icons/fa';
 import { FaDroplet } from 'react-icons/fa6';
-import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import PaymentModal from './PaymentModal';
+import ChatButton from '../Chat/ChatButton';
 
 const TenantDashboard = () => {
   const { currentUser, userProfile, logout } = useAuth();
   const navigate = useNavigate();
-  const [flat, setFlat] = useState(null);
-  const [property, setProperty] = useState(null);
+  const [flatData, setFlatData] = useState(null);
+  const [propertyData, setPropertyData] = useState(null);
+  const [ownerData, setOwnerData] = useState(null);
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
-  const [showPayment, setShowPayment] = useState(false);
 
   useEffect(() => {
-    fetchTenantData();
-  }, [currentUser]);
+    if (userProfile?.flatId) {
+      fetchFlatData();
+      fetchBills();
+    } else {
+      setLoading(false);
+    }
+  }, [userProfile]);
 
-  const fetchTenantData = async () => {
+  const fetchFlatData = async () => {
     try {
-      // Find flat where tenant is assigned
-      const flatsQuery = query(
-        collection(db, 'flats'),
-        where('tenantId', '==', currentUser.uid)
-      );
-      const flatsSnapshot = await getDocs(flatsQuery);
-      
-      if (flatsSnapshot.empty) {
-        toast.error('No flat assigned to your account');
-        setLoading(false);
-        return;
+      // Fetch flat data
+      const flatDoc = await getDoc(doc(db, 'flats', userProfile.flatId));
+      if (flatDoc.exists()) {
+        const flat = { id: flatDoc.id, ...flatDoc.data() };
+        setFlatData(flat);
+
+        // Fetch property data
+        const propertyDoc = await getDoc(doc(db, 'properties', flat.propertyId));
+        if (propertyDoc.exists()) {
+          const property = { id: propertyDoc.id, ...propertyDoc.data() };
+          setPropertyData(property);
+
+          // Fetch owner data
+          const ownerDoc = await getDoc(doc(db, 'users', property.ownerId));
+          if (ownerDoc.exists()) {
+            setOwnerData(ownerDoc.data());
+          }
+        }
       }
+    } catch (error) {
+      console.error('Error fetching flat data:', error);
+      toast.error('Failed to load flat details');
+    }
+  };
 
-      const flatData = { id: flatsSnapshot.docs[0].id, ...flatsSnapshot.docs[0].data() };
-      setFlat(flatData);
-
-      // Fetch property details
-      const propertyDoc = await getDoc(doc(db, 'properties', flatData.propertyId));
-      if (propertyDoc.exists()) {
-        setProperty({ id: propertyDoc.id, ...propertyDoc.data() });
-      }
-
-      // Fetch water bills
+  const fetchBills = async () => {
+    try {
       const billsQuery = query(
         collection(db, 'waterReadings'),
-        where('flatId', '==', flatData.id)
+        where('flatId', '==', userProfile.flatId)
       );
       const billsSnapshot = await getDocs(billsQuery);
-      const billsData = billsSnapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      
+      const billsData = billsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      billsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
       setBills(billsData);
     } catch (error) {
-      console.error('Error fetching tenant data:', error);
-      toast.error('Failed to load dashboard');
+      console.error('Error fetching bills:', error);
+      toast.error('Failed to load bills');
     } finally {
       setLoading(false);
     }
@@ -70,19 +79,23 @@ const TenantDashboard = () => {
     try {
       await logout();
       navigate('/');
+      toast.success('Logged out successfully');
     } catch (error) {
+      console.error('Logout error:', error);
       toast.error('Failed to logout');
     }
   };
 
-  const handlePayClick = (bill) => {
+  const handlePayment = (bill) => {
     setSelectedBill(bill);
-    setShowPayment(true);
+    setShowPaymentModal(true);
   };
 
-  const totalPending = bills
-    .filter(b => b.status === 'pending')
-    .reduce((sum, b) => sum + b.billAmount, 0);
+  const handlePaymentSuccess = () => {
+    setShowPaymentModal(false);
+    setSelectedBill(null);
+    fetchBills();
+  };
 
   if (loading) {
     return (
@@ -92,16 +105,18 @@ const TenantDashboard = () => {
     );
   }
 
-  if (!flat) {
+  if (!userProfile?.flatId) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <FaHome className="text-6xl text-gray-300 mx-auto mb-4" />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <FaHome className="text-orange-600 text-2xl" />
+          </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">No Flat Assigned</h2>
-          <p className="text-gray-600 mb-4">Please contact your property owner</p>
+          <p className="text-gray-600 mb-6">Please contact your property owner</p>
           <button
             onClick={handleLogout}
-            className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700"
+            className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
           >
             Logout
           </button>
@@ -110,14 +125,19 @@ const TenantDashboard = () => {
     );
   }
 
+  const totalBills = bills.length;
+  const pendingAmount = bills
+    .filter(bill => bill.status === 'pending')
+    .reduce((sum, bill) => sum + bill.billAmount, 0);
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center">
                 <FaDroplet className="text-white text-xl" />
               </div>
               <div>
@@ -125,13 +145,23 @@ const TenantDashboard = () => {
                 <p className="text-sm text-gray-600">{userProfile?.name}</p>
               </div>
             </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-            >
-              <FaSignOutAlt className="text-lg" />
-              <span className="hidden sm:inline">Logout</span>
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Chat Button */}
+              {flatData && ownerData && (
+                <ChatButton 
+                  flatId={userProfile.flatId}
+                  otherUser={ownerData}
+                />
+              )}
+              {/* Logout Button */}
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              >
+                <FaSignOutAlt className="text-lg" />
+                <span className="hidden sm:inline">Logout</span>
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -139,42 +169,42 @@ const TenantDashboard = () => {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Flat Info Card */}
-        <div className="bg-gradient-to-br from-blue-600 to-cyan-600 rounded-2xl p-6 text-white mb-8 shadow-lg">
-          <div className="flex items-center justify-between">
+        <div className="bg-gradient-to-r from-blue-600 to-cyan-600 rounded-2xl shadow-lg p-6 text-white mb-8">
+          <div className="flex items-start justify-between">
             <div>
-              <p className="text-blue-100 text-sm mb-1">Your Flat</p>
-              <h2 className="text-3xl font-bold mb-2">Flat {flat.flatNumber}</h2>
-              <p className="text-blue-100">{property?.name}</p>
-              <p className="text-blue-100 text-sm">{property?.address}</p>
+              <p className="text-blue-100 mb-1">Your Flat</p>
+              <h2 className="text-4xl font-bold mb-2">Flat {flatData?.flatNumber}</h2>
+              <p className="text-lg">{propertyData?.name}</p>
+              <p className="text-blue-100 text-sm">{propertyData?.address}</p>
             </div>
             <div className="text-right">
               <p className="text-blue-100 text-sm mb-1">Flat Code</p>
-              <p className="text-xl font-mono bg-white/20 px-4 py-2 rounded-lg">
-                {flat.flatCode}
-              </p>
+              <code className="bg-white bg-opacity-20 px-3 py-1.5 rounded-lg font-mono text-lg">
+                {flatData?.flatCode}
+              </code>
             </div>
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-600 text-sm font-medium mb-1">Total Bills</p>
-                <p className="text-3xl font-bold text-gray-900">{bills.length}</p>
+                <p className="text-gray-600 text-sm mb-1">Total Bills</p>
+                <p className="text-3xl font-bold text-gray-900">{totalBills}</p>
               </div>
               <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                <FaCalendar className="text-blue-600 text-xl" />
+                <FaHome className="text-blue-600 text-xl" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-600 text-sm font-medium mb-1">Pending Amount</p>
-                <p className="text-3xl font-bold text-orange-600">₹{totalPending.toFixed(2)}</p>
+                <p className="text-gray-600 text-sm mb-1">Pending Amount</p>
+                <p className="text-3xl font-bold text-orange-600">₹{pendingAmount.toFixed(2)}</p>
               </div>
               <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
                 <FaMoneyBillWave className="text-orange-600 text-xl" />
@@ -182,11 +212,11 @@ const TenantDashboard = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-gray-600 text-sm font-medium mb-1">Water Rate</p>
-                <p className="text-3xl font-bold text-gray-900">₹{property?.waterRatePerUnit}/unit</p>
+                <p className="text-gray-600 text-sm mb-1">Water Rate</p>
+                <p className="text-3xl font-bold text-cyan-600">₹{propertyData?.waterRatePerUnit}/unit</p>
               </div>
               <div className="w-12 h-12 bg-cyan-100 rounded-xl flex items-center justify-center">
                 <FaDroplet className="text-cyan-600 text-xl" />
@@ -195,15 +225,15 @@ const TenantDashboard = () => {
           </div>
         </div>
 
-        {/* Bills List */}
+        {/* Bills Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200">
             <h3 className="text-xl font-bold text-gray-900">Water Bills</h3>
           </div>
-
+          
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50">
+              <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Month</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Previous</th>
@@ -225,10 +255,12 @@ const TenantDashboard = () => {
                   bills.map((bill) => (
                     <tr key={bill.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4">
-                        <p className="font-medium text-gray-900">{bill.billMonth}</p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(bill.createdAt).toLocaleDateString()}
-                        </p>
+                        <div>
+                          <p className="font-semibold text-gray-900">{bill.billMonth}</p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(bill.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-gray-700">{bill.previousReading}</td>
                       <td className="px-6 py-4 text-gray-700">{bill.currentReading}</td>
@@ -236,27 +268,29 @@ const TenantDashboard = () => {
                         <span className="font-semibold text-blue-600">{bill.unitsConsumed} units</span>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="font-bold text-gray-900 text-lg">₹{bill.billAmount.toFixed(2)}</span>
+                        <span className="font-bold text-gray-900">₹{bill.billAmount.toFixed(2)}</span>
                       </td>
                       <td className="px-6 py-4">
                         {bill.status === 'paid' ? (
-                          <span className="inline-flex items-center px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                          <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
                             Paid
                           </span>
                         ) : (
-                          <span className="inline-flex items-center px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
+                          <span className="inline-flex items-center gap-1 px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium">
                             Pending
                           </span>
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {bill.status === 'pending' && (
+                        {bill.status === 'pending' ? (
                           <button
-                            onClick={() => handlePayClick(bill)}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                            onClick={() => handlePayment(bill)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
                           >
                             Pay Now
                           </button>
+                        ) : (
+                          <span className="text-green-600 font-medium">✓ Paid</span>
                         )}
                       </td>
                     </tr>
@@ -269,18 +303,14 @@ const TenantDashboard = () => {
       </main>
 
       {/* Payment Modal */}
-      {showPayment && (
+      {showPaymentModal && selectedBill && (
         <PaymentModal
           bill={selectedBill}
           onClose={() => {
-            setShowPayment(false);
+            setShowPaymentModal(false);
             setSelectedBill(null);
           }}
-          onSuccess={() => {
-            setShowPayment(false);
-            setSelectedBill(null);
-            fetchTenantData();
-          }}
+          onSuccess={handlePaymentSuccess}
         />
       )}
     </div>

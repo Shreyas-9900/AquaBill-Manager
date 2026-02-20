@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import AddFlatModal from './AddFlatModal';
 import AddReadingModal from './AddReadingModal';
 import PaymentRequestModal from './PaymentRequestModal';
+import ChatButton from '../Chat/ChatButton';
 
 const PropertyDetails = () => {
   const { propertyId } = useParams();
@@ -320,6 +321,14 @@ const PropertyDetails = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
+                          {/* Chat Button - Only if tenant exists */}
+                          {flat.tenantId && flat.tenant && (
+                            <ChatButton 
+                              flatId={flat.id}
+                              otherUser={flat.tenant}
+                            />
+                          )}
+
                           {/* Add Reading Button */}
                           <button
                             onClick={() => {
